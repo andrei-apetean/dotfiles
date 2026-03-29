@@ -64,11 +64,17 @@ vim.opt.listchars = {
     precedes = "<",   -- Show character for text preceding the window
 }
 
+-- Stupid windows
+vim.opt.shell = "powershell"
+vim.opt.shellcmdflag = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command"
+vim.opt.shellquote = ""
+vim.opt.shellxquote = ""
+
 local function branch_name()
  local branch
     if vim.fn.has('win32') == 1 or vim.fn.has('win64') == 1 then
         -- Windows: use NUL instead of /dev/null and remove newline with PowerShell
-        branch = vim.fn.system("git branch --show-current 2> NUL")
+        branch = vim.fn.system("git branch --show-current 2> NULL")
         branch = branch:gsub("\n", "")  -- Remove newline for Windows
     else
         -- Unix-like systems: use /dev/null and tr to remove newline
