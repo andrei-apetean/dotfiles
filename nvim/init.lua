@@ -1,4 +1,3 @@
-vim.cmd("colorscheme retrobox")
 -- basic settings
 vim.opt.number = true
 vim.opt.relativenumber = true
@@ -46,14 +45,13 @@ vim.opt.hidden = true
 vim.opt.backspace = "indent,eol,start"
 vim.opt.autochdir = false
 vim.opt.iskeyword:append("-")
-vim.opt.path:append(".","**")
+vim.opt.path:append("**")
 vim.opt.selection = "exclusive"
 vim.opt.mouse = "a"
 vim.opt.clipboard:append("unnamedplus")
 vim.opt.modifiable = true
 vim.opt.syntax = "on"
-vim.opt.swapfile = false
-vim.opt.path = {".", "**"}
+
 
 vim.opt.list = true
 vim.opt.listchars = {
@@ -63,156 +61,147 @@ vim.opt.listchars = {
     extends = ">",    -- Show character for text extending beyond window
     precedes = "<",   -- Show character for text preceding the window
 }
+vim.o.laststatus = 3 -- show a single status line at the bottom / no split
+vim.g.netrw_banner    = 0 
+-- vim.g.netrw_liststyle = 3 
+-- vim.g.netrw_browse_split = 4  -- open in previous window (most useful with Lexplore)
 
--- Stupid windows
+vim.cmd("colorscheme dusk")
+
 vim.opt.shell = "powershell"
 vim.opt.shellcmdflag = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command"
 vim.opt.shellquote = ""
 vim.opt.shellxquote = ""
 
-local function branch_name()
- local branch
-    if vim.fn.has('win32') == 1 or vim.fn.has('win64') == 1 then
-        -- Windows: use NUL instead of /dev/null and remove newline with PowerShell
-        branch = vim.fn.system("git branch --show-current 2> $null")
-        branch = branch:gsub("\n", "")  -- Remove newline for Windows
-    else
-        -- Unix-like systems: use /dev/null and tr to remove newline
-        branch = vim.fn.system("git branch --show-current 2> /dev/null | tr -d '\n'")
-    end
-    return branch ~= "" and branch or "[none]"
-end
+-- ── Statusline ────────────────────────────────
 
-local function lsp_status()
-    local clients = vim.lsp.get_clients({ bufnr = 0 })
-    if #clients == 0 then
-        return "[lsp]"
-    end
-    local client_names = {}
-    for _, client in ipairs(clients) do
-        table.insert(client_names, client.name)
-    end
-    if #clients > 1 then 
-        return "[" .. table.concat(client_names, ",") .. "]"
-    else
-        return client_names[1]
-    end
-end
-
-vim.api.nvim_create_autocmd({"FileType", "BufEnter", "FocusGained"}, {
-    callback = function()
-        vim.b.branch_name = branch_name()
-    end
-})
-
-vim.api.nvim_create_autocmd({"LspAttach", "LspDetach", "BufEnter"}, {
-    callback = function()
-        vim.b.lsp_status = lsp_status()
-    end
-})
-
-
-function status_line()
-    return " %f %= "
-        .. vim.b.branch_name
-        .. " %l:%c %L %P "
-end
-vim.opt.statusline = " %f %= %{luaeval('vim.b.branch_name')} %{luaeval('vim.b.lsp_status')} %l:%c %L %P "
-
------------------------------------------------------------------
---                            LSP
------------------------------------------------------------------
--- Enable LSP diagnostics
-vim.diagnostic.config({
-  virtual_text = true,      -- Show inline diagnostic messages
-  signs = true,             -- Show signs in the sign column
-  underline = true,         -- Underline diagnostics
-  update_in_insert = false, -- Don't update diagnostics while typing
-  severity_sort = true,     -- Sort by severity
-})
-
--- Start clangd automatically for C/C++ files
-vim.api.nvim_create_autocmd('FileType', {
-  pattern = { 'c', 'cpp' },
+local git_branch = ""
+vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained" }, {
   callback = function()
-    vim.lsp.start({
-      name = 'clangd',
-      cmd = {'clangd'},
-      root_dir = vim.fs.dirname(vim.fs.find({'compile_commands.json', '.git'}, { upward = true })[1]),
-    })
+    local result
+    if vim.fn.has('win32') == 1 or vim.fn.has('win64') == 1 then
+        result = vim.fn.system("git rev-parse --abbrev-ref HEAD 2> $null")
+    else
+        result = vim.fn.system("git rev-parse --abbrev-ref HEAD 2>/dev/null")
+    end
+    git_branch = vim.v.shell_error == 0
+      and result:gsub("\n", "")
+      or ""
   end,
 })
 
--- LSP keybindings
-vim.api.nvim_create_autocmd('LspAttach', {
-  callback = function(args)
-    local opts = { buffer = args.buf }
-
-    -- Keybindings
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-    vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
-    vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, opts)
-    vim.keymap.set('n', 'gr', vim.lsp.buf.references, opts)
-    vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, opts)
-    vim.keymap.set('n', ']d', vim.diagnostic.goto_next, opts)
-    vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, opts)
-
-    -- Enable completion
-    vim.bo[args.buf].omnifunc = 'v:lua.vim.lsp.omnifunc'
-  end,
-})
-
--- Wanted a plugin-less config but need to install this crap cause... treesitter
--- (not bashing on Lazy, it's pretty awesome)
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
-  vim.fn.system({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    "https://github.com/folke/lazy.nvim.git",
-    "--branch=stable",
-    lazypath,
-  })
+local function diagnostics()
+  local e = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.ERROR })
+  local w = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.WARN })
+  local i = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.INFO })
+  local parts = {}
+  if e > 0 then parts[#parts+1] = "E:" .. e end
+  if w > 0 then parts[#parts+1] = "W:" .. w end
+  if i > 0 then parts[#parts+1] = "I:" .. i end
+  return table.concat(parts, " ")
 end
-vim.opt.rtp:prepend(lazypath)
 
-require("lazy").setup({
-  -- TreeSitter
-  {
-    "nvim-treesitter/nvim-treesitter",
-    build = ":TSUpdate",
-    config = function()
-      require("nvim-treesitter.config").setup({
-        -- Install parsers for these languages
-        ensure_installed = {
-          "c",
-          "lua",
-          "vim",
-          "vimdoc",
-          "bash",
-          "json",
-          "markdown",
-        },
-        
-        -- Install parsers synchronously (only for ensure_installed)
-        sync_install = false,
-        
-        -- Automatically install missing parsers when entering buffer
-        auto_install = true,
-        
-        -- Highlighting
-        highlight = {
-          enable = true,
-          additional_vim_regex_highlighting = false,
-        },
-        
-        -- Indentation based on treesitter
-        indent = {
-          enable = true,
-        },
-      })
-    end,
-  },
+local function lsp_clients()
+  local clients = vim.lsp.get_clients({ bufnr = 0 })
+  if #clients == 0 then return "" end
+  local names = {}
+  for _, c in ipairs(clients) do names[#names+1] = c.name end
+  return "[" .. table.concat(names, ", ") .. "]"
+end
+
+-- local modes = {
+--   n      = "NO", i  = "IN", v  = "VI",
+--   V      = "VL", c  = "CM", R  = "RE",
+--   s      = "SE", S  = "SL", t  = "TE",
+--   ["\22"] = "VB", ["\19"] = "SB",
+-- }
+
+function _G.Statusline()
+  -- local mode   = modes[vim.api.nvim_get_mode().mode] or "??"
+  local branch = git_branch ~= "" and ("[" .. git_branch .. "]") or "[git_none] "
+  local file   = " %f%m"
+  local diag   = diagnostics()
+  local pos    = "%l:%c "
+  local lsp    = lsp_clients()
+
+  local right = lsp .. (lsp ~= "" and " " or "[lsp_none]")
+                .. branch
+                .. (diag ~= "" and diag .. "  " or "")
+                .. " "
+                .. pos
+
+  return " " .. file .. "%=" .. right
+end
+
+vim.o.statusline = "%!v:lua.Statusline()"
+
+-- ── LSP ───────────────────────────────────────
+-- Modern completion menu style
+vim.opt.completeopt = { "menuone", "noselect", "popup", "fuzzy" }
+vim.opt.pumheight   = 12  -- max items shown at once
+vim.o.winborder = "rounded"
+
+-- Diagnostics appearance
+vim.diagnostic.config({
+  virtual_text  = true,
+  signs         = true,
+  underline     = true,
+  update_in_insert = false,
+  float = { border = "rounded" },  -- border on gl diagnostic float
 })
+
+-- Keymaps and completion, set when LSP attaches to a buffer
+vim.api.nvim_create_autocmd("LspAttach", {
+  callback = function(args)
+    local buf  = args.buf
+    local opts = { buffer = buf }
+
+    vim.keymap.set("n", "gd", vim.lsp.buf.definition,           opts)  -- go to definition
+    vim.keymap.set("n", "K",  vim.lsp.buf.hover,                opts)  -- hover docs
+    vim.keymap.set("n", "[d", vim.diagnostic.goto_prev,         opts)  -- previous diagnostic
+    vim.keymap.set("n", "]d", vim.diagnostic.goto_next,         opts)  -- next diagnostic
+    vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action,  opts)
+    vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename,       opts)
+    vim.keymap.set("n", "<leader>e", vim.diagnostic.open_float, opts)
+    vim.keymap.set("i", "<C-l>", vim.lsp.completion.get,        opts)
+
+    vim.lsp.completion.enable(true, args.data.client_id, buf, { autotrigger = true })
+  end,
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+    pattern  = { "c", "cpp", "lua", "python" },
+    callback = function()
+        local ft = vim.bo.filetype
+        local servers = {
+            c   = { name = "clangd",    cmd = { "clangd" } },
+            cpp = { name = "clangd",    cmd = { "clangd" } },
+            lua = { name = "lua_ls", cmd  = { "lua-language-server" },
+            settings = {
+                Lua = {
+                    runtime  = { version = "LuaJIT" },
+                    diagnostics = { globals = { "vim" }, },
+                    workspace = {
+                        library = vim.api.nvim_get_runtime_file("", true),
+                        checkThirdParty = false,
+                    },
+                },
+            },
+        },
+    }
+    local cfg = servers[ft]
+    if cfg then
+        vim.lsp.start({
+            name     = cfg.name,
+            cmd      = cfg.cmd,
+            root_dir = vim.fs.dirname(
+                vim.fs.find(
+                    { "compile_commands.json", ".clangd", "CMakeLists.txt", ".git" },
+                    { upward = true }
+                )[1]
+            ),
+        })
+    end
+end,
+    })
+
